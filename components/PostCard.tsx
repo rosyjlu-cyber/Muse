@@ -273,7 +273,7 @@ export function PostCard({ post, onPress, onLike, onComment, onAuthorPress }: Po
           <TouchableOpacity onPress={() => onLike?.(post)} hitSlop={8} activeOpacity={0.7}>
             <Ionicons
               name={post.liked_by_me ? 'heart' : 'heart-outline'}
-              size={20}
+              size={25}
               color={post.liked_by_me ? Theme.colors.brandWarm : 'rgba(0,0,0,0.38)'}
             />
           </TouchableOpacity>
@@ -292,7 +292,7 @@ export function PostCard({ post, onPress, onLike, onComment, onAuthorPress }: Po
           hitSlop={8}
           activeOpacity={0.7}
         >
-          <Ionicons name="chatbubble-outline" size={19} color='rgba(0,0,0,0.38)' />
+          <Ionicons name="chatbubble-outline" size={24} color='rgba(0,0,0,0.38)' />
           {localCommentsCount > 0 && (
             <Text style={styles.footerCount}>{localCommentsCount}</Text>
           )}
@@ -304,7 +304,7 @@ export function PostCard({ post, onPress, onLike, onComment, onAuthorPress }: Po
           hitSlop={8}
           activeOpacity={0.7}
         >
-          <Ionicons name="paper-plane-outline" size={18} color='rgba(0,0,0,0.38)' />
+          <Ionicons name="paper-plane-outline" size={23} color='rgba(0,0,0,0.38)' />
         </TouchableOpacity>
       </View>
 

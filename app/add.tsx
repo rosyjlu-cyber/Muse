@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { Theme } from '@/constants/Theme';
 import { upsertPost, scanOutfit, generateItemImage, addPostWardrobeItem, getWardrobeItems, type WardrobeItem } from '@/utils/api';
@@ -38,6 +39,8 @@ const ADD_BLUE       = '#5A8FA8';           // mirror steel blue
 const ADD_BLUE_LIGHT = 'rgba(90,143,168,0.12)'; // icon ring tint
 const CARD_W = SCREEN_WIDTH - 32;
 const CARD_H = Math.round(CARD_W * (4 / 3));
+// Picker modal: fixed cell width so odd last item stays half-width (not full-width)
+const PICKER_CELL_W = Math.floor((SCREEN_WIDTH - 32 - 12) / 2);
 
 // ─── Crop view ────────────────────────────────────────────────────────────────
 
@@ -142,20 +145,21 @@ function CropView({
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={cropStyles.header}>
+      <View style={cropStyles.navRow}>
         <TouchableOpacity onPress={onCancel} hitSlop={12} disabled={confirming}>
-          <Text style={cropStyles.cancelText}>cancel</Text>
+          <Text style={cropStyles.cancelText}>‹ back</Text>
         </TouchableOpacity>
-        <Text style={cropStyles.title}>resize photo</Text>
         <TouchableOpacity onPress={handleConfirm} disabled={confirming} hitSlop={12}>
           {confirming
-            ? <ActivityIndicator size="small" color={ADD_BLUE} />
-            : <Text style={cropStyles.useText}>use</Text>
+            ? <ActivityIndicator size="small" color={Theme.colors.brandWarm} />
+            : <Text style={cropStyles.useText}>looks good</Text>
           }
         </TouchableOpacity>
       </View>
 
-      <View style={cropStyles.viewportOuter}>
+      <View style={{ flex: 1 }}>
+        <Text style={cropStyles.title} pointerEvents="none">resize photo</Text>
+        <View style={cropStyles.viewportOuter}>
         <View
           style={{ width: CARD_W, height: CARD_H, overflow: 'hidden', borderRadius: 16 }}
           {...panResponder.panHandlers}
@@ -178,6 +182,7 @@ function CropView({
         </View>
         <Text style={cropStyles.hint}>pinch to zoom · drag to reposition</Text>
       </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -198,27 +203,44 @@ export default function AddScreen() {
   const [tags, setTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [fromCamera, setFromCamera] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [saveToRoll, setSaveToRoll] = useState(true);
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const [selectedItems, setSelectedItems] = useState<WardrobeItem[]>([]);
   const [itemPickerVisible, setItemPickerVisible] = useState(false);
   const [allWardrobeItems, setAllWardrobeItems] = useState<WardrobeItem[]>([]);
   const [filterCat, setFilterCat] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [autoScan, setAutoScan] = useState(true);
+  const [pendingPickerItems, setPendingPickerItems] = useState<WardrobeItem[]>([]);
+  const [tagInput, setTagInput] = useState('');
+  const tagInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(AUTO_SCAN_KEY).then(v => {
+      setAutoScan(v === null || v === 'true');
+    });
+  }, []);
 
   const handleOpenItemPicker = async () => {
     if (!session?.user.id) return;
     const items = await getWardrobeItems(session.user.id).catch(() => []);
     setAllWardrobeItems(items.filter(i => !selectedItems.some(s => s.id === i.id)));
+    setPendingPickerItems([]);
     setFilterCat(null);
     setFilterTag(null);
     setItemPickerVisible(true);
   };
 
-  const handleAddItem = (item: WardrobeItem) => {
-    setSelectedItems(prev => [...prev, item]);
+  const handleTogglePickerItem = (item: WardrobeItem) => {
+    setPendingPickerItems(prev =>
+      prev.some(i => i.id === item.id) ? prev.filter(i => i.id !== item.id) : [...prev, item]
+    );
+  };
+
+  const handleConfirmPickerItems = () => {
+    setSelectedItems(prev => [...prev, ...pendingPickerItems]);
+    setPendingPickerItems([]);
     setItemPickerVisible(false);
   };
 
@@ -230,7 +252,7 @@ export default function AddScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
     if (!result.canceled) {
-      setFromCamera(true);
+      setSaveToRoll(true);
       setRawAsset(result.assets[0]);
     }
   };
@@ -243,7 +265,7 @@ export default function AddScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
     if (!result.canceled) {
-      setFromCamera(false);
+      setSaveToRoll(false);
       setRawAsset(result.assets[0]);
     }
   };
@@ -275,7 +297,7 @@ export default function AddScreen() {
     setSaving(true);
     setSaveError(null);
     try {
-      if (fromCamera && saveToRoll) {
+      if (saveToRoll) {
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status === 'granted') {
           await MediaLibrary.saveToLibraryAsync(photoUri);
@@ -355,15 +377,12 @@ export default function AddScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.kav}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-            <Text style={styles.cancelText}>cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerDate}>{date ? formatDate(date) : ''}</Text>
+        <View style={styles.navRow}>
           <TouchableOpacity onPress={() => setPhotoUri(null)} hitSlop={12}>
-            <Text style={styles.retakeText}>retake</Text>
+            <Text style={styles.cancelText}>‹ back</Text>
           </TouchableOpacity>
         </View>
+        <Text style={styles.headerDate}>{date ? formatDate(date) : ''}</Text>
 
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={[styles.photoContainer, { height: CARD_H }]}>
@@ -374,84 +393,161 @@ export default function AddScreen() {
             />
           </View>
 
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.captionInput}
-              placeholder="add a caption... (optional)"
-              placeholderTextColor={Theme.colors.disabled}
-              value={caption}
-              onChangeText={setCaption}
-              multiline
-              submitBehavior="blurAndSubmit"
-              maxLength={280}
-              returnKeyType="done"
-            />
+          <View style={styles.formSection}>
+            <Text style={styles.fieldLabel}>caption</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={styles.captionInput}
+                placeholder="what's the vibe today?"
+                placeholderTextColor={Theme.colors.disabled}
+                value={caption}
+                onChangeText={setCaption}
+                multiline
+                submitBehavior="blurAndSubmit"
+                maxLength={280}
+                returnKeyType="done"
+              />
+            </View>
           </View>
 
-          <TagInput value={tags} onChange={setTags} placeholder="add tags, e.g. streetwear, vintage..." />
+          <View style={styles.formSection}>
+            <Text style={styles.fieldLabel}>tags</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tagScroll}
+              contentContainerStyle={styles.tagScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.tagAddPill}>
+                <TextInput
+                  ref={tagInputRef}
+                  style={styles.tagAddInput}
+                  value={tagInput}
+                  placeholder="+ add"
+                  placeholderTextColor={Theme.colors.accent}
+                  onChangeText={text => {
+                    if (text.endsWith(',') || text.endsWith(' ')) {
+                      const t = text.slice(0, -1).trim().toLowerCase();
+                      if (t && !tags.includes(t)) setTags([...tags, t]);
+                      setTagInput('');
+                    } else {
+                      setTagInput(text);
+                    }
+                  }}
+                  onSubmitEditing={() => {
+                    const t = tagInput.trim().toLowerCase();
+                    if (t && !tags.includes(t)) setTags([...tags, t]);
+                    setTagInput('');
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  submitBehavior="blurAndSubmit"
+                />
+              </View>
+              {tags.map(tag => (
+                <TouchableOpacity key={tag} style={styles.tagChipSelected} onPress={() => setTags(tags.filter(t => t !== tag))} activeOpacity={0.7}>
+                  <Text style={styles.tagChipSelectedText}>{tag} ×</Text>
+                </TouchableOpacity>
+              ))}
+              {(profile?.style_tags ?? []).filter(t => !tags.includes(t.toLowerCase())).map(tag => (
+                <TouchableOpacity key={tag} style={styles.tagChipSuggestion} onPress={() => { const t = tag.toLowerCase(); if (!tags.includes(t)) setTags([...tags, t]); }} activeOpacity={0.7}>
+                  <Text style={styles.tagChipSuggestionText}>{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
           <View style={styles.itemsSection}>
-            <Text style={styles.itemsSectionLabel}>items in this look</Text>
-            <View style={styles.itemsChips}>
+            <Text style={styles.fieldLabel}>items in this look</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.itemsGrid} style={{ marginTop: 6 }}>
               {selectedItems.map(item => (
-                <View key={item.id} style={styles.itemChip}>
-                  <Text style={styles.itemChipText} numberOfLines={1}>{item.label}</Text>
-                  <TouchableOpacity onPress={() => setSelectedItems(prev => prev.filter(i => i.id !== item.id))} hitSlop={8}>
-                    <Feather name="x" size={12} color={Theme.colors.secondary} />
+                <View key={item.id} style={styles.itemCell}>
+                  {item.generated_image_url
+                    ? <Image source={{ uri: item.generated_image_url }} style={styles.itemCellImg} resizeMode="cover" />
+                    : <View style={[styles.itemCellImg, styles.itemCellPlaceholder]}>
+                        <Text style={{ fontSize: 22 }}>{categoryEmoji(item.category)}</Text>
+                      </View>
+                  }
+                  <TouchableOpacity style={styles.itemCellX} onPress={() => setSelectedItems(prev => prev.filter(i => i.id !== item.id))} hitSlop={4}>
+                    <Feather name="x" size={11} color="#fff" />
                   </TouchableOpacity>
                 </View>
               ))}
-              <TouchableOpacity style={styles.addItemChip} onPress={handleOpenItemPicker} activeOpacity={0.7}>
-                <Feather name="plus" size={13} color={Theme.colors.secondary} />
-                <Text style={styles.addItemChipText}>add item</Text>
+              <TouchableOpacity style={styles.itemCellAdd} onPress={handleOpenItemPicker} activeOpacity={0.7}>
+                <Feather name="plus" size={22} color={Theme.colors.accent} />
               </TouchableOpacity>
-            </View>
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => {
+                const v = !autoScan;
+                setAutoScan(v);
+                AsyncStorage.setItem(AUTO_SCAN_KEY, String(v));
+              }}
+              activeOpacity={0.75}
+              style={styles.autoScanRow}
+            >
+              {autoScan ? (
+                <LinearGradient colors={['#F9C74F', '#F77FAD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.autoScanPill}>
+                  <View style={styles.autoScanThumbRight} />
+                </LinearGradient>
+              ) : (
+                <View style={[styles.autoScanPill, styles.autoScanPillOff]}>
+                  <View style={styles.autoScanThumbLeft} />
+                </View>
+              )}
+              <Text style={styles.autoScanLabel}>auto-detect additional items</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.togglesSection}>
-            {fromCamera && (
-              <View style={styles.toggleRow}>
-                <View>
-                  <Text style={styles.toggleLabel}>save to camera roll</Text>
-                  <Text style={styles.toggleSub}>keep a copy on your phone</Text>
-                </View>
-                <Switch
-                  value={saveToRoll}
-                  onValueChange={setSaveToRoll}
-                  trackColor={{ false: Theme.colors.border, true: ADD_BLUE }}
-                  thumbColor={Theme.colors.background}
-                  ios_backgroundColor={Theme.colors.border}
-                />
-              </View>
-            )}
-            <View style={[styles.toggleRow, styles.toggleRowLast]}>
-              <View>
-                <Text style={styles.toggleLabel}>hide from feed</Text>
-                <Text style={styles.toggleSub}>only you can see this</Text>
-              </View>
-              <Switch
-                value={isPrivate}
-                onValueChange={setIsPrivate}
-                trackColor={{ false: Theme.colors.border, true: ADD_BLUE }}
-                thumbColor={Theme.colors.background}
-                ios_backgroundColor={Theme.colors.border}
-              />
+          <View style={[styles.toggleRow, styles.toggleFirst]}>
+            <View>
+              <Text style={styles.toggleLabel}>save to camera roll</Text>
+              <Text style={styles.toggleSub}>keep a copy on your phone</Text>
             </View>
+            <Switch
+              value={saveToRoll}
+              onValueChange={setSaveToRoll}
+              trackColor={{ false: Theme.colors.border, true: ADD_BLUE }}
+              thumbColor={Theme.colors.background}
+              ios_backgroundColor={Theme.colors.border}
+            />
+          </View>
+          <View style={[styles.toggleRow, styles.toggleRowLast]}>
+            <View>
+              <Text style={styles.toggleLabel}>hide from feed</Text>
+              <Text style={styles.toggleSub}>only you can see this</Text>
+            </View>
+            <Switch
+              value={isPrivate}
+              onValueChange={setIsPrivate}
+              trackColor={{ false: Theme.colors.border, true: ADD_BLUE }}
+              thumbColor={Theme.colors.background}
+              ios_backgroundColor={Theme.colors.border}
+            />
           </View>
 
           {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
             onPress={handleSave}
             disabled={saving}
             activeOpacity={0.85}
+            style={saving ? styles.saveBtnDisabled : undefined}
           >
-            {saving ? (
-              <ActivityIndicator color={Theme.colors.background} />
-            ) : (
-              <Text style={styles.saveBtnText}>add this fit</Text>
-            )}
+            <LinearGradient
+              colors={['#F9C74F', '#F77FAD']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.saveBtn}
+            >
+              {saving ? (
+                <ActivityIndicator color="#0B0B0B" />
+              ) : (
+                <Text style={styles.saveBtnText}>add this fit ✨</Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -522,19 +618,40 @@ export default function AddScreen() {
               numColumns={2}
               columnWrapperStyle={{ gap: 12 }}
               contentContainerStyle={{ padding: 16, gap: 12 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.itemPickerCell} onPress={() => handleAddItem(item)} activeOpacity={0.8}>
-                  {item.generated_image_url ? (
-                    <Image source={{ uri: item.generated_image_url }} style={styles.itemPickerImg} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.itemPickerImg, styles.itemPickerPlaceholder]}>
-                      <Text style={styles.itemPickerEmoji}>{categoryEmoji(item.category)}</Text>
-                    </View>
-                  )}
-                  <Text style={styles.itemPickerLabel} numberOfLines={2}>{item.label}</Text>
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                const selected = pendingPickerItems.some(i => i.id === item.id);
+                return (
+                  <TouchableOpacity
+                    style={[styles.itemPickerCell, selected && styles.itemPickerCellSelected]}
+                    onPress={() => handleTogglePickerItem(item)}
+                    activeOpacity={0.8}
+                  >
+                    {item.generated_image_url ? (
+                      <Image source={{ uri: item.generated_image_url }} style={styles.itemPickerImg} resizeMode="cover" />
+                    ) : (
+                      <View style={[styles.itemPickerImg, styles.itemPickerPlaceholder]}>
+                        <Text style={styles.itemPickerEmoji}>{categoryEmoji(item.category)}</Text>
+                      </View>
+                    )}
+                    {selected && (
+                      <View style={styles.itemPickerCheck}>
+                        <Feather name="check" size={14} color="#fff" />
+                      </View>
+                    )}
+                    <Text style={[styles.itemPickerLabel, selected && styles.itemPickerLabelSelected]} numberOfLines={2}>{item.label}</Text>
+                  </TouchableOpacity>
+                );
+              }}
             />
+          )}
+          {pendingPickerItems.length > 0 && (
+            <TouchableOpacity onPress={handleConfirmPickerItems} activeOpacity={0.85} style={styles.pickerFooter}>
+              <LinearGradient colors={['#F9C74F', '#F77FAD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.pickerFooterBtn}>
+                <Text style={styles.pickerFooterText}>
+                  add {pendingPickerItems.length} item{pendingPickerItems.length > 1 ? 's' : ''}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           )}
         </SafeAreaView>
       </Modal>
@@ -549,12 +666,19 @@ const cropStyles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 14,
   },
+  navRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4,
+  },
+  headerSide: { flex: 1, minWidth: 70 },
   title: {
-    fontSize: Theme.font.base, fontWeight: '700',
-    color: Theme.colors.primary, letterSpacing: -0.2,
+    position: 'absolute', top: 32, left: 0, right: 0, zIndex: 1,
+    fontFamily: 'Caprasimo_400Regular',
+    fontSize: 17, color: Theme.colors.primary, letterSpacing: -0.3,
+    textAlign: 'center',
   },
   cancelText: { fontSize: Theme.font.base, color: Theme.colors.secondary, fontWeight: '500' },
-  useText: { fontSize: Theme.font.base, color: ADD_BLUE, fontWeight: '700' },
+  useText: { fontSize: Theme.font.base, color: Theme.colors.brandWarm, fontWeight: '700' },
 
   viewportOuter: {
     flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14,
@@ -565,10 +689,10 @@ const cropStyles = StyleSheet.create({
   },
 
   corner: { position: 'absolute', width: 22, height: 22 },
-  cornerTL: { top: 0, left: 0, borderTopWidth: 2.5, borderLeftWidth: 2.5, borderColor: ADD_BLUE, borderTopLeftRadius: 4 },
-  cornerTR: { top: 0, right: 0, borderTopWidth: 2.5, borderRightWidth: 2.5, borderColor: ADD_BLUE, borderTopRightRadius: 4 },
-  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 2.5, borderLeftWidth: 2.5, borderColor: ADD_BLUE, borderBottomLeftRadius: 4 },
-  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 2.5, borderRightWidth: 2.5, borderColor: ADD_BLUE, borderBottomRightRadius: 4 },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 2.5, borderLeftWidth: 2.5, borderColor: Theme.colors.brandWarm, borderTopLeftRadius: 4 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 2.5, borderRightWidth: 2.5, borderColor: Theme.colors.brandWarm, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 2.5, borderLeftWidth: 2.5, borderColor: Theme.colors.brandWarm, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 2.5, borderRightWidth: 2.5, borderColor: Theme.colors.brandWarm, borderBottomRightRadius: 4 },
 });
 
 const styles = StyleSheet.create({
@@ -589,7 +713,7 @@ const styles = StyleSheet.create({
   },
   pickerTitle: {
     fontFamily: 'Caprasimo_400Regular', fontSize: 32, color: Theme.colors.primary,
-    letterSpacing: -0.5, textAlign: 'center', marginBottom: 6,
+    letterSpacing: -0.5, textAlign: 'center', marginTop: 6, marginBottom: 6,
   },
   pickerButtons: { flexDirection: 'row', gap: 16, marginTop: 40 },
   pickerBtn: {
@@ -613,81 +737,123 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', paddingVertical: 12,
   },
+  navRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 0, paddingTop: 14, paddingBottom: 4,
+  },
+  headerSide: { flex: 1, minWidth: 70 },
   cancelText: { fontSize: Theme.font.base, color: Theme.colors.secondary, fontWeight: '500' },
   headerDate: {
-    fontSize: Theme.font.sm, color: Theme.colors.primary,
-    fontWeight: '700', textAlign: 'center', flex: 1, marginHorizontal: 8,
+    fontFamily: 'Caprasimo_400Regular',
+    fontSize: 20, color: Theme.colors.primary,
+    textAlign: 'center', marginTop: 10, paddingBottom: 10,
   },
-  retakeText: { fontSize: Theme.font.base, color: ADD_BLUE, fontWeight: '600' },
-  photoContainer: { borderRadius: Theme.radius.lg, overflow: 'hidden', marginBottom: 12 },
+  retakeText: { fontSize: Theme.font.base, color: Theme.colors.brandWarm, fontWeight: '600' },
+  photoContainer: { borderRadius: Theme.radius.lg, overflow: 'hidden', marginBottom: 12, marginTop: 16 },
+
+  // Form sections
+  formSection: { marginTop: 20 },
+  fieldLabel: {
+    fontSize: 10, fontWeight: '600', color: Theme.colors.secondary,
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6,
+  },
   inputRow: {
     backgroundColor: Theme.colors.surface, borderRadius: Theme.radius.md,
     borderWidth: 1, borderColor: Theme.colors.border,
-    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, minHeight: 64,
+    paddingHorizontal: 14, paddingVertical: 12, minHeight: 64,
   },
   captionInput: {
     fontSize: Theme.font.base, color: Theme.colors.primary, lineHeight: 22,
+    textAlignVertical: 'top', paddingTop: 0, paddingBottom: 0,
+    minHeight: 40,
   },
+
+  // Save button
   saveBtn: {
-    backgroundColor: ADD_BLUE, borderRadius: Theme.radius.md,
+    borderRadius: Theme.radius.md, overflow: 'hidden',
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
-    marginTop: 12, marginBottom: 8,
+    marginTop: 16, marginBottom: 8,
   },
   saveBtnDisabled: { opacity: 0.5 },
   saveBtnText: {
     fontSize: Theme.font.base, fontWeight: '700',
-    color: '#fff', letterSpacing: -0.2,
+    color: '#0B0B0B', letterSpacing: -0.2,
   },
   errorText: {
     fontSize: Theme.font.sm, color: '#D9534F',
     textAlign: 'center', marginTop: 8, marginBottom: 4,
   },
-  togglesSection: {
-    marginTop: 10,
-    borderRadius: Theme.radius.md,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
-    overflow: 'hidden',
-  },
+
+  // Toggle rows (borderless, clean)
   toggleRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Theme.colors.surface,
-    paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Theme.colors.border,
+    paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: Theme.colors.border,
   },
-  toggleRowLast: { borderBottomWidth: 0 },
+  toggleFirst: { marginTop: 28 },
+  toggleRowLast: { marginBottom: 8 },
   toggleLabel: { fontSize: Theme.font.base, color: Theme.colors.primary, fontWeight: '500' },
   toggleSub: { fontSize: Theme.font.xs, color: Theme.colors.secondary, marginTop: 2 },
 
-  // Items in this look
-  itemsSection: {
-    marginTop: 10,
-    borderRadius: Theme.radius.md,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
+  // Tags
+  tagScroll: { height: 44, marginTop: 2 },
+  tagScrollContent: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  tagAddPill: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 100, borderWidth: 1.5, borderStyle: 'dashed' as any,
+    borderColor: Theme.colors.accent,
+    justifyContent: 'center',
+  },
+  tagAddInput: {
+    fontSize: Theme.font.xs, fontWeight: '700', color: Theme.colors.accent,
+    minWidth: 36, padding: 0, margin: 0, height: 16,
+  },
+  tagChipSelected: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 100, backgroundColor: Theme.colors.accentLight,
+    borderWidth: 1, borderColor: 'rgba(58,135,181,0.25)',
+  },
+  tagChipSelectedText: { fontSize: Theme.font.sm, fontWeight: '600', color: Theme.colors.accent },
+  tagChipSuggestion: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 100, borderWidth: 1, borderColor: Theme.colors.border,
     backgroundColor: Theme.colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
   },
-  itemsSectionLabel: {
-    fontSize: 10, fontWeight: '600', color: Theme.colors.secondary,
-    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8,
+  tagChipSuggestionText: { fontSize: Theme.font.sm, color: Theme.colors.secondary },
+
+  // Items in this look
+  itemsSection: { marginTop: 20 },
+  itemsGrid: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
+  itemCell: { width: 72, height: 72, borderRadius: 10, overflow: 'hidden', position: 'relative' },
+  itemCellImg: { width: 72, height: 72, borderRadius: 10, backgroundColor: Theme.colors.surface },
+  itemCellPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  itemCellX: {
+    position: 'absolute', top: 4, right: 4,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  itemsChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  itemChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, backgroundColor: Theme.colors.background,
-    borderWidth: 1, borderColor: Theme.colors.border,
-    maxWidth: 160,
+  itemCellAdd: {
+    width: 72, height: 72, borderRadius: 10,
+    borderWidth: 1.5, borderStyle: 'dashed' as any,
+    borderColor: Theme.colors.accent,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Theme.colors.accentLight,
   },
-  itemChipText: { fontSize: Theme.font.xs, color: Theme.colors.primary, flex: 1 },
-  addItemChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: Theme.colors.border,
+
+  // Auto-scan toggle (same as closet)
+  autoScanRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, marginTop: 18,
   },
-  addItemChipText: { fontSize: Theme.font.xs, color: Theme.colors.secondary },
+  autoScanPill: {
+    width: 36, height: 20, borderRadius: 10,
+    justifyContent: 'center', paddingHorizontal: 2,
+  },
+  autoScanPillOff: { backgroundColor: 'rgba(0,0,0,0.15)' },
+  autoScanThumbRight: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff', alignSelf: 'flex-end' },
+  autoScanThumbLeft: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff', alignSelf: 'flex-start' },
+  autoScanLabel: { fontSize: Theme.font.sm, color: Theme.colors.secondary },
 
   // Item picker modal
   itemPickerSafe: { flex: 1, backgroundColor: Theme.colors.background },
@@ -699,7 +865,7 @@ const styles = StyleSheet.create({
   itemPickerTitle: {
     fontFamily: 'Caprasimo_400Regular', fontSize: 20, color: Theme.colors.primary, letterSpacing: -0.3,
   },
-  itemPickerCell: { flex: 1 },
+  itemPickerCell: { width: PICKER_CELL_W },
   itemPickerImg: {
     width: '100%', aspectRatio: 1, borderRadius: Theme.radius.md,
     backgroundColor: Theme.colors.surface,
@@ -707,8 +873,22 @@ const styles = StyleSheet.create({
   itemPickerPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   itemPickerEmoji: { fontSize: 32 },
   itemPickerLabel: { fontSize: Theme.font.xs, color: Theme.colors.primary, marginTop: 4, textAlign: 'center' },
+  itemPickerLabelSelected: { color: Theme.colors.accent, fontWeight: '600' },
+  itemPickerCellSelected: { opacity: 0.9 },
+  itemPickerCheck: {
+    position: 'absolute', top: 6, right: 6,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Theme.colors.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
   itemPickerEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   itemPickerEmptyText: { fontSize: Theme.font.sm, color: Theme.colors.secondary, textAlign: 'center', lineHeight: 20 },
+  pickerFooter: { paddingHorizontal: 16, paddingVertical: 12 },
+  pickerFooterBtn: {
+    borderRadius: Theme.radius.md, paddingVertical: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pickerFooterText: { fontSize: Theme.font.base, fontWeight: '700', color: '#0B0B0B' },
 
   // Filter rows — explicit height required so horizontal ScrollViews don't collapse to 0
   filterScroll: { height: 44, marginTop: 8, marginBottom: 2 },

@@ -75,8 +75,8 @@ export default function WardrobeItemScreen() {
         if (w) {
           setItem(w);
           setEditLabel(w.label);
-          setEditBrand((w as any).brand ?? '');
-          setEditDesc('');
+          setEditBrand(w.brand ?? '');
+          setEditDesc(w.description ?? '');
           setEditLink(w.link_url ?? '');
           setEditTags(w.tags ?? []);
         }

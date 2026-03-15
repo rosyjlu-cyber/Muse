@@ -66,10 +66,35 @@ export async function removeUserCat(cat: string, existing: string[]): Promise<st
 const SCREEN_WIDTH = Math.min(Dimensions.get('window').width, 390);
 const GRID_PAD = 20;
 const GRID_GAP = 8;
-const COLS = 3;
-const CELL_SIZE = Math.floor((SCREEN_WIDTH - GRID_PAD * 2 - GRID_GAP * (COLS - 1)) / COLS);
 const MERGE_CELL = Math.floor((SCREEN_WIDTH - 32 - 16) / 3);
 const COMPARE_IMG = Math.floor((SCREEN_WIDTH - 32 - 12) / 2) - 20;
+
+function GridDotsIcon({ cols }: { cols: 2 | 3 }) {
+  if (cols === 2) {
+    return (
+      <View style={{ gap: 3 }}>
+        {[0, 1].map(row => (
+          <View key={row} style={{ flexDirection: 'row', gap: 3 }}>
+            {[0, 1].map(ci => (
+              <View key={ci} style={{ width: 10, height: 10, borderRadius: 2, borderWidth: 1.5, borderColor: Theme.colors.limeText }} />
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 2.5 }}>
+      {[0, 1, 2].map(row => (
+        <View key={row} style={{ flexDirection: 'row', gap: 2.5 }}>
+          {[0, 1, 2].map(ci => (
+            <View key={ci} style={{ width: 7, height: 7, borderRadius: 1.5, borderWidth: 1.5, borderColor: Theme.colors.limeText }} />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function categoryEmoji(cat: string | null): string {
   switch (cat) {
@@ -87,7 +112,6 @@ function categoryEmoji(cat: string | null): string {
 interface Props {
   userId: string;
   onItemPress: (id: string) => void;
-  onAddItem?: () => void;
   onLogOutfit?: () => void;
 }
 
@@ -140,15 +164,15 @@ const reorderLabelStyle: object = {
   fontSize: 15, color: Theme.colors.primary, fontWeight: '500',
 };
 
-export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Props) {
+export function WardrobeGrid({ userId, onItemPress, onLogOutfit }: Props) {
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState<string | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [userCats, setUserCats] = useState<string[]>([]);
-  const [autoScan, setAutoScan] = useState(true);
   const [tagOrder, setTagOrder] = useState<string[]>([]);
+  const [cols, setCols] = useState<2 | 3>(3);
   const [reorderVisible, setReorderVisible] = useState(false);
   const [draftOrder, setDraftOrder] = useState<string[]>([]);
   const draftRef = useRef<string[]>([]);
@@ -175,9 +199,6 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
 
   useEffect(() => {
     loadUserCats().then(setUserCats);
-    AsyncStorage.getItem(AUTO_SCAN_KEY).then(v => {
-      if (v !== null) setAutoScan(v === 'true');
-    });
     AsyncStorage.getItem(TAG_ORDER_KEY).then(v => {
       if (v) setTagOrder(JSON.parse(v));
     });
@@ -369,15 +390,28 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
   const withImages = items.filter(i => i.generated_image_url || i.photos?.[0]?.photo_url);
 
   const filtered = withImages.filter(item => {
-    if (search && !item.label.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const haystack = [
+        item.label,
+        item.description,
+        item.brand,
+        item.category,
+        item.link_url,
+        ...(item.tags ?? []),
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
     if (filterCat && item.category !== filterCat) return false;
     if (filterTag && !(item.tags ?? []).includes(filterTag)) return false;
     return true;
   });
 
+  const cellSize = Math.floor((SCREEN_WIDTH - GRID_PAD * 2 - GRID_GAP * (cols - 1)) / cols);
+
   const rows: WardrobeItem[][] = [];
-  for (let i = 0; i < filtered.length; i += COLS) {
-    rows.push(filtered.slice(i, i + COLS));
+  for (let i = 0; i < filtered.length; i += cols) {
+    rows.push(filtered.slice(i, i + cols));
   }
 
   const mergeOtherItems = mergeSource
@@ -409,7 +443,7 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
   return (
     <>
       <View style={styles.container}>
-        {/* Top row: search + add button */}
+        {/* Top row: search + grid toggle */}
         <View style={styles.topRow}>
           <View style={styles.searchBar}>
             <Feather name="search" size={13} color={Theme.colors.limeMuted} />
@@ -426,9 +460,8 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity style={styles.addBtn} onPress={onAddItem} activeOpacity={0.75}>
-            <Feather name="plus" size={13} color={Theme.colors.limeText} />
-            <Text style={styles.addBtnText}>add item</Text>
+          <TouchableOpacity onPress={() => setCols(c => c === 3 ? 2 : 3)} hitSlop={8} style={styles.gridToggleBtn}>
+            <GridDotsIcon cols={cols === 3 ? 2 : 3} />
           </TouchableOpacity>
         </View>
 
@@ -538,13 +571,13 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
                   return (
                     <TouchableOpacity
                       key={item.id}
-                      style={styles.cell}
+                      style={[styles.cell, { width: cellSize }]}
                       onPress={() => onItemPress(item.id)}
                       onLongPress={() => handleLongPress(item)}
                       activeOpacity={0.82}
                     >
                       {imageUrl ? (
-                        <View style={[styles.cellImage, styles.cellImageWhiteBg, !isUserPhoto && styles.cellImagePad]}>
+                        <View style={[styles.cellImage, styles.cellImageWhiteBg, !isUserPhoto && styles.cellImagePad, { width: cellSize, height: cellSize }]}>
                           <Image
                             source={{ uri: imageUrl }}
                             style={styles.cellImageFill}
@@ -552,7 +585,7 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
                           />
                         </View>
                       ) : (
-                        <View style={[styles.cellImage, styles.cellPlaceholder]}>
+                        <View style={[styles.cellImage, styles.cellPlaceholder, { width: cellSize, height: cellSize }]}>
                           <Text style={styles.cellEmoji}>{categoryEmoji(item.category)}</Text>
                         </View>
                       )}
@@ -577,35 +610,12 @@ export function WardrobeGrid({ userId, onItemPress, onAddItem, onLogOutfit }: Pr
                     </TouchableOpacity>
                   );
                 })}
-                {row.length < COLS && Array.from({ length: COLS - row.length }).map((_, i) => (
-                  <View key={`filler-${i}`} style={styles.cell} />
+                {row.length < cols && Array.from({ length: cols - row.length }).map((_, i) => (
+                  <View key={`filler-${i}`} style={[styles.cell, { width: cellSize }]} />
                 ))}
               </View>
             ))}
-            <TouchableOpacity
-              onPress={() => {
-                const v = !autoScan;
-                setAutoScan(v);
-                AsyncStorage.setItem(AUTO_SCAN_KEY, String(v));
-              }}
-              activeOpacity={0.75}
-              style={styles.autoScanRow}
-            >
-              {autoScan ? (
-                <LinearGradient
-                  colors={['#F9C74F', '#F77FAD']}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={styles.autoScanPill}
-                >
-                  <View style={styles.autoScanThumbRight} />
-                </LinearGradient>
-              ) : (
-                <View style={[styles.autoScanPill, styles.autoScanPillOff]}>
-                  <View style={styles.autoScanThumbLeft} />
-                </View>
-              )}
-              <Text style={styles.autoScanLabel}>auto-detect items when you log a look</Text>
-            </TouchableOpacity>
+            <Text style={styles.autoScanLabel}>add more outfits to grow your closet 👀</Text>
           </>
         )}
       </View>
@@ -895,11 +905,11 @@ const styles = StyleSheet.create({
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: 'rgba(0,0,0,0.07)', borderRadius: Theme.radius.sm,
-    paddingHorizontal: 10, paddingVertical: 8,
+    paddingHorizontal: 10, paddingVertical: 10,
   },
   searchInput: {
     flex: 1, fontSize: Theme.font.xs, color: Theme.colors.limeText,
-    paddingVertical: 0,
+    padding: 0, margin: 0, height: 16,
   },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -955,10 +965,12 @@ const styles = StyleSheet.create({
 
   // Grid
   row: { flexDirection: 'row', gap: GRID_GAP, marginBottom: GRID_GAP },
-  cell: { width: CELL_SIZE },
+  cell: {},
   cellImage: {
-    width: CELL_SIZE, height: CELL_SIZE,
     borderRadius: Theme.radius.md,
+  },
+  gridToggleBtn: {
+    padding: 6,
   },
   cellImageWhiteBg: { backgroundColor: '#FFFFFF', overflow: 'hidden' },
   cellImagePad: { padding: 8 },
@@ -993,7 +1005,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', alignSelf: 'flex-start',
   },
   autoScanLabel: {
-    fontSize: Theme.font.xs, color: Theme.colors.secondary, fontWeight: '400',
+    fontSize: Theme.font.sm, color: Theme.colors.limeMuted,
+    textAlign: 'center', paddingTop: 18,
   },
 
   // Merge modal
