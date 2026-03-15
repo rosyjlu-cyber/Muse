@@ -52,6 +52,6 @@ export const Theme = {
     lg: 22,
     xl: 28,
     xxl: 36,
-    brand: 'PlayfairDisplay_700Bold_Italic' as const,
+    brand: 'Caprasimo_400Regular' as const,
   },
 };

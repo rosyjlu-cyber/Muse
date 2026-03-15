@@ -300,7 +300,13 @@ export default function AddScreen() {
       if (saveToRoll) {
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status === 'granted') {
-          await MediaLibrary.saveToLibraryAsync(photoUri);
+          const asset = await MediaLibrary.createAssetAsync(photoUri);
+          const album = await MediaLibrary.getAlbumAsync('Muse OOTD');
+          if (album) {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          } else {
+            await MediaLibrary.createAlbumAsync('Muse OOTD', asset, false);
+          }
         }
       }
       const savedPost = await upsertPost(date, photoUri, caption, tags, isPrivate);

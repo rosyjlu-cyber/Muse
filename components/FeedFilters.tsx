@@ -63,6 +63,7 @@ export function FeedFiltersBar({ filters, onChange, communities, availableTags }
           label={tag}
           active={filters.tag === tag}
           onPress={() => toggleTag(tag)}
+          variant="tag"
         />
       ))}
     </ScrollView>
@@ -102,7 +103,7 @@ function DatePickerPill({ date, dateRange, onDateChange, onDateRangeChange }: {
   return (
     <View style={styles.datePillRow}>
       <TouchableOpacity
-        style={[styles.pill, hasFilter && styles.pillActive]}
+        style={[styles.pill, hasFilter && styles.pillActiveRed]}
         onPress={() => setOpen(true)}
         activeOpacity={0.75}
       >
@@ -276,14 +277,16 @@ function DatePickerModal({ visible, selected, dateRange, onSelect, onRangeSelect
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
-function Pill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function Pill({ label, active, onPress, variant = 'default' }: { label: string; active: boolean; onPress: () => void; variant?: 'tag' | 'default' }) {
+  const activeStyle = variant === 'tag' ? styles.pillActiveTag : styles.pillActiveRed;
+  const activeTextStyle = variant === 'tag' ? styles.pillTextActiveTag : styles.pillTextActive;
   return (
     <TouchableOpacity
-      style={[styles.pill, active && styles.pillActive]}
+      style={[styles.pill, active && activeStyle]}
       onPress={onPress}
       activeOpacity={0.75}
     >
-      <Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text>
+      <Text style={[styles.pillText, active && activeTextStyle]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -314,8 +317,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.18)',
   },
-  pillActive: {
-    backgroundColor: Theme.colors.accent,
+  pillActiveRed: {
+    backgroundColor: Theme.colors.brandWarm,
+    borderColor: Theme.colors.brandWarm,
+  },
+  pillActiveTag: {
+    backgroundColor: 'rgba(58,135,181,0.10)',
     borderColor: Theme.colors.accent,
   },
   pillText: {
@@ -325,6 +332,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   pillTextActive: { color: '#fff' },
+  pillTextActiveTag: { color: Theme.colors.accent },
 
   divider: {
     width: 1,
@@ -356,8 +364,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   quickBtnActive: {
-    backgroundColor: Theme.colors.accent,
-    borderColor: Theme.colors.accent,
+    backgroundColor: Theme.colors.brandWarm,
+    borderColor: Theme.colors.brandWarm,
   },
   quickBtnText: {
     fontSize: Theme.font.xs,
@@ -427,7 +435,7 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
   },
-  calDayInnerSel: { backgroundColor: Theme.colors.accent },
+  calDayInnerSel: { backgroundColor: Theme.colors.brandWarm },
   calDayNum: {
     fontSize: 13,
     fontWeight: '500',

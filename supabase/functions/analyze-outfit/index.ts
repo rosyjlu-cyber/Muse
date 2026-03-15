@@ -94,7 +94,6 @@ async function handleScan(body: any, userId: string, supabase: any) {
       .insert({
         user_id: userId,
         label: item.label,
-        description: item.label, // pre-fill user notes with the label as a starting point
         ai_description: item.ai_description ?? null,
         category: item.category ?? null,
       })

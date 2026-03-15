@@ -34,7 +34,6 @@ import {
 } from '@/utils/api';
 import { formatDate } from '@/utils/dates';
 import { useAuth } from '@/utils/auth';
-import { TagInput } from '@/components/TagInput';
 
 const SCREEN_WIDTH = Math.min(Dimensions.get('window').width, 390);
 const MERGE_CELL = Math.floor((SCREEN_WIDTH - 32 - 16) / 3);
@@ -49,6 +48,8 @@ export default function EntryScreen() {
   const [editing, setEditing] = useState(false);
   const [editCaption, setEditCaption] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+  const tagInputRef = useRef<TextInput>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -137,7 +138,7 @@ export default function EntryScreen() {
       catch { window.alert('could not delete this look. try again?'); }
       return;
     }
-    Alert.alert('delete this look?', "you can't undo this.", [
+    Alert.alert('delete this look?', "this fit disappears for good 🫣", [
       { text: 'keep it', style: 'cancel' },
       {
         text: 'delete', style: 'destructive',
@@ -432,20 +433,24 @@ export default function EntryScreen() {
           <View style={styles.metaRow}>
             <View style={{ flex: 1 }}>
               {editing ? (
-                <View style={styles.inputCard}>
-                  <TextInput
-                    style={styles.captionInput}
-                    value={editCaption}
-                    onChangeText={setEditCaption}
-                    placeholder="add a caption... (optional)"
-                    placeholderTextColor={Theme.colors.disabled}
-                    multiline
-                    scrollEnabled={false}
-                    returnKeyType="default"
-                    maxLength={280}
-                    autoFocus
-                  />
-                </View>
+                <>
+                  <Text style={styles.editFieldLabel}>caption</Text>
+                  <View style={styles.inputCard}>
+                    <TextInput
+                      style={styles.captionInput}
+                      value={editCaption}
+                      onChangeText={setEditCaption}
+                      placeholder="what's the vibe today?"
+                      placeholderTextColor={Theme.colors.disabled}
+                      multiline
+                      scrollEnabled={false}
+                      returnKeyType="done"
+                      submitBehavior="blurAndSubmit"
+                      maxLength={280}
+                      autoFocus
+                    />
+                  </View>
+                </>
               ) : post.caption ? (
                 <Text style={styles.captionText}>{post.caption}</Text>
               ) : isOwn ? (
@@ -455,9 +460,52 @@ export default function EntryScreen() {
               ) : null}
 
               {editing ? (
-                <View style={styles.tagInputWrap}>
-                  <TagInput value={editTags} onChange={setEditTags} placeholder="add tags..." />
-                </View>
+                <>
+                  <Text style={styles.editFieldLabel}>tags</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.tagScroll}
+                    contentContainerStyle={styles.tagScrollContent}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <View style={styles.tagAddPill}>
+                      <TextInput
+                        ref={tagInputRef}
+                        style={styles.tagAddInput}
+                        value={tagInput}
+                        placeholder="+ add"
+                        placeholderTextColor={Theme.colors.accent}
+                        onChangeText={text => {
+                          if (text.endsWith(',') || text.endsWith(' ')) {
+                            const t = text.slice(0, -1).trim().toLowerCase();
+                            if (t && !editTags.includes(t)) setEditTags([...editTags, t]);
+                            setTagInput('');
+                          } else { setTagInput(text); }
+                        }}
+                        onSubmitEditing={() => {
+                          const t = tagInput.trim().toLowerCase();
+                          if (t && !editTags.includes(t)) setEditTags([...editTags, t]);
+                          setTagInput('');
+                        }}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        returnKeyType="done"
+                        submitBehavior="blurAndSubmit"
+                      />
+                    </View>
+                    {editTags.map(tag => (
+                      <TouchableOpacity key={tag} style={styles.tagChipSelected} onPress={() => setEditTags(editTags.filter(t => t !== tag))} activeOpacity={0.7}>
+                        <Text style={styles.tagChipSelectedText}>{tag} ×</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {(authProfile?.style_tags ?? []).filter(t => !editTags.includes(t.toLowerCase())).map(tag => (
+                      <TouchableOpacity key={tag} style={styles.tagChipSuggestion} onPress={() => { const t = tag.toLowerCase(); if (!editTags.includes(t)) setEditTags([...editTags, t]); }} activeOpacity={0.7}>
+                        <Text style={styles.tagChipSuggestionText}>{tag}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
               ) : post.tags.length > 0 ? (
                 <View style={styles.tagsRow}>
                   {post.tags.map(t => (
@@ -1065,12 +1113,41 @@ const styles = StyleSheet.create({
   likeRowCount: { fontSize: Theme.font.sm, fontWeight: '700', color: 'rgba(0,0,0,0.38)' },
   likeRowCountActive: { color: Theme.colors.accent },
 
+  editFieldLabel: {
+    fontSize: 10, fontWeight: '600', color: Theme.colors.secondary,
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, marginTop: 12,
+  },
   inputCard: {
     backgroundColor: Theme.colors.surface, borderRadius: Theme.radius.md,
     borderWidth: 1, borderColor: Theme.colors.border,
-    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, minHeight: 64,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4, minHeight: 64,
   },
-  captionInput: { fontSize: Theme.font.base, color: Theme.colors.primary, lineHeight: 22 },
+  captionInput: {
+    fontSize: Theme.font.base, color: Theme.colors.primary, lineHeight: 22,
+    textAlignVertical: 'top', paddingTop: 0, paddingBottom: 0, minHeight: 40,
+  },
+  tagScroll: { height: 44, marginBottom: 8 },
+  tagScrollContent: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  tagAddPill: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100,
+    borderWidth: 1.5, borderStyle: 'dashed' as any, borderColor: Theme.colors.accent,
+    justifyContent: 'center',
+  },
+  tagAddInput: {
+    fontSize: Theme.font.xs, fontWeight: '700', color: Theme.colors.accent,
+    minWidth: 36, padding: 0, margin: 0, height: 16,
+  },
+  tagChipSelected: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
+    backgroundColor: Theme.colors.accentLight,
+    borderWidth: 1, borderColor: 'rgba(58,135,181,0.25)',
+  },
+  tagChipSelectedText: { fontSize: Theme.font.sm, fontWeight: '600', color: Theme.colors.accent },
+  tagChipSuggestion: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100,
+    borderWidth: 1, borderColor: Theme.colors.border, backgroundColor: Theme.colors.surface,
+  },
+  tagChipSuggestionText: { fontSize: Theme.font.sm, color: Theme.colors.secondary },
 
   captionText: {
     fontSize: Theme.font.base, color: Theme.colors.primary,
@@ -1090,7 +1167,6 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 4 },
   metaRight: { alignItems: 'flex-end', gap: 8, paddingTop: 2 },
   addHint: { fontSize: Theme.font.sm, color: Theme.colors.disabled, marginBottom: 12 },
-  tagInputWrap: { marginBottom: 8 },
   editSaveRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 4, marginBottom: 4 },
   editCancelInline: { fontSize: Theme.font.sm, color: Theme.colors.secondary },
   editSaveBtn: { backgroundColor: 'rgba(30, 100, 220, 0.7)', borderRadius: Theme.radius.full, paddingVertical: 6, paddingHorizontal: 16 },

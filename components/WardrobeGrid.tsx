@@ -615,7 +615,7 @@ export function WardrobeGrid({ userId, onItemPress, onLogOutfit }: Props) {
                 ))}
               </View>
             ))}
-            <Text style={styles.autoScanLabel}>add more outfits to grow your closet 👀</Text>
+            <Text style={styles.autoScanLabel}>log more outfits to grow your closet 👀</Text>
           </>
         )}
       </View>

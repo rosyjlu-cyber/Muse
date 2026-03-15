@@ -458,8 +458,10 @@ export default function WardrobeItemScreen() {
           </View>
 
           {/* Merge */}
-          <TouchableOpacity onPress={handleOpenMerge} activeOpacity={0.75} style={styles.mergeActionBtn}>
-            <Text style={styles.mergeActionText}>merge with another item</Text>
+          <TouchableOpacity onPress={handleOpenMerge} activeOpacity={0.75} style={styles.mergeActionBtnWrap}>
+            <LinearGradient colors={['#F9C74F', '#F77FAD']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.mergeActionBtn}>
+              <Text style={styles.mergeActionText}>merge with another item</Text>
+            </LinearGradient>
           </TouchableOpacity>
 
           {/* Remove */}
@@ -760,12 +762,12 @@ const styles = StyleSheet.create({
   },
 
   // Merge + remove at bottom
+  mergeActionBtnWrap: { alignSelf: 'center', marginTop: 52, borderRadius: 100, overflow: 'hidden' },
   mergeActionBtn: {
-    alignSelf: 'center', marginTop: 52,
     paddingHorizontal: 24, paddingVertical: 11,
-    borderRadius: 100, backgroundColor: 'rgba(232,39,45,0.10)',
+    borderRadius: 100,
   },
-  mergeActionText: { fontSize: Theme.font.sm, fontWeight: '600', color: Theme.colors.brandWarm },
+  mergeActionText: { fontSize: Theme.font.sm, fontWeight: '700', color: '#7C3060' },
   removeBtn: { alignSelf: 'center', marginTop: 16, marginBottom: 8, paddingVertical: 8, paddingHorizontal: 16 },
 
   // Merge modal
